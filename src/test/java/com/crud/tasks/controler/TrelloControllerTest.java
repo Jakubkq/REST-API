@@ -4,7 +4,10 @@ import com.crud.tasks.controller.TrelloController;
 import com.crud.tasks.domain.CreatedTrelloCardDto;
 import com.crud.tasks.domain.TrelloBoardDto;
 import com.crud.tasks.domain.TrelloCardDto;
+import com.crud.tasks.domain.TrelloListDto;
 import com.crud.tasks.trello.facade.TrelloFacade;
+import com.google.gson.Gson;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -12,21 +15,13 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 
-import java.util.Arrays;
 import java.util.List;
-import static org.hamcrest.Matchers.is;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import static org.hamcrest.collection.IsCollectionWithSize.hasSize;
-import java.util.ArrayList;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 @SpringJUnitConfig
 @WebMvcTest(TrelloController.class)
@@ -39,38 +34,65 @@ class TrelloControllerTest {
     private TrelloFacade trelloFacade;
 
     @Test
-    void shouldFetchTrelloBoards() throws Exception {
-        // given
-        List<TrelloBoardDto> trelloBoardDtoList = Arrays.asList(new TrelloBoardDto("test_board_id", "test_board_name", new ArrayList<>()));
-        when(trelloFacade.fetchTrelloBoards()).thenReturn(trelloBoardDtoList);
+    void shouldFetchEmptyTrelloBoards() throws Exception {
+        // Given
+        when(trelloFacade.fetchTrelloBoards()).thenReturn(List.of());
 
-        // when & then
-        mockMvc.perform(get("/v1/trello/boards")
+        //When & Then
+        mockMvc
+                .perform(MockMvcRequestBuilders
+                        .get("/v1/trello/boards")
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].id", is("test_board_id")))
-                .andExpect(jsonPath("$[0].name", is("test_board_name")));
+                .andExpect(MockMvcResultMatchers.status().is(200))
+                .andExpect(MockMvcResultMatchers.jsonPath("$", Matchers.hasSize(0)));
+    }
+
+
+    @Test
+    void shouldFetchTrelloBoards() throws Exception {
+        // Given
+        List<TrelloListDto> trelloLists = List.of(new TrelloListDto("1", "Test list", false));
+        List<TrelloBoardDto> trelloBoards = List.of(new TrelloBoardDto("1", "Test Task", trelloLists));
+        when(trelloFacade.fetchTrelloBoards()).thenReturn(trelloBoards);
+
+        //When & Then
+        mockMvc
+                .perform(MockMvcRequestBuilders
+                        .get("/v1/trello/boards")
+                        .contentType(MediaType.APPLICATION_JSON))
+                // Trello board fields
+                .andExpect(MockMvcResultMatchers.jsonPath("$", Matchers.hasSize(1)))
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].id", Matchers.is("1")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].name", Matchers.is("Test Task")))
+                // Trello list fields
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].lists", Matchers.hasSize(1)))
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].lists[0].id", Matchers.is("1")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].lists[0].name", Matchers.is("Test list")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$[0].lists[0].closed", Matchers.is(false)));
     }
 
     @Test
     void shouldCreateTrelloCard() throws Exception {
-        // given
-        TrelloCardDto trelloCardDto = new TrelloCardDto("test_name", "test_description", "test_pos", "test_list_id");
-        CreatedTrelloCardDto createdTrelloCardDto = new CreatedTrelloCardDto("test_id", "test_name", "test_shortUrl");
-        when(trelloFacade.createCard(any())).thenReturn(createdTrelloCardDto);
+        // Given
+        TrelloCardDto trelloCardDto =
+                new TrelloCardDto("Test", "Test description", "top", "1");
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        String jsonContent = objectMapper.writeValueAsString(trelloCardDto);
+        CreatedTrelloCardDto createdTrelloCardDto =
+                new CreatedTrelloCardDto("232", "Test", "http://test.com");
 
-        // when & then
-        mockMvc.perform(post("/v1/trello/cards")
+        when(trelloFacade.createCard(any(TrelloCardDto.class))).thenReturn(createdTrelloCardDto);
+        Gson gson = new Gson();
+        String jsonContent = gson.toJson(trelloCardDto);
+
+        //When & Then
+        mockMvc
+                .perform(MockMvcRequestBuilders
+                        .post("/v1/trello/cards")
                         .contentType(MediaType.APPLICATION_JSON)
                         .characterEncoding("UTF-8")
                         .content(jsonContent))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id", is("test_id")))
-                .andExpect(jsonPath("$.name", is("test_name")))
-                .andExpect(jsonPath("$.shortUrl", is("test_shortUrl")));
+                .andExpect(MockMvcResultMatchers.jsonPath("$.id", Matchers.is("232")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.name", Matchers.is("Test")))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.shortUrl", Matchers.is("http://test.com")));
     }
 }
